@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 
+import { Client } from '#/domain/entities/client.entity';
 import { ITokenGeneratorService, TokenResult } from '#/domain/services/token-generator.service';
 import { env } from '#/infrastructure/config/env';
 
@@ -7,12 +8,16 @@ export class JwtTokenGeneratorService implements ITokenGeneratorService {
     private readonly secret = env.JWT_SECRET ?? 'default_secret';
     private readonly expiresIn = '1h';
 
-    sign(payload: object): TokenResult {
-        const token = jwt.sign(payload, this.secret, { expiresIn: this.expiresIn });
+    sign(payload: Client): TokenResult {
+        try {
+            const token = jwt.sign({ ...payload }, this.secret, { expiresIn: this.expiresIn });
+            const expiresIn = new Date(Date.now() + this.parseExpiresIn(this.expiresIn)).toISOString();
 
-        const expiresIn = new Date(Date.now() + this.parseExpiresIn(this.expiresIn)).toISOString();
-
-        return { token, expiresIn };
+            return { token, expiresIn };
+        } catch (error) {
+            console.error('Error generating token:', error);
+            throw new Error('Failed to generate token');
+        }
     }
 
     private parseExpiresIn(expiresIn: string): number {

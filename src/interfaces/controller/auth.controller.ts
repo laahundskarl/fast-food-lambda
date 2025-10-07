@@ -11,7 +11,7 @@ import { AuthPresenter } from '#/interfaces/presenter/auth/auth.presenter';
 export class AuthController implements IAuthController {
     constructor(@inject(TYPES.AuthUseCase) private readonly authUseCase: IAuthUseCase) {}
 
-    async get(request: AuthDto): Promise<AuthResponseDTO> {
+    async getToken(request: AuthDto): Promise<AuthResponseDTO> {
         const response = await this.authUseCase.execute(request);
         return AuthPresenter.toDTO(response);
     }

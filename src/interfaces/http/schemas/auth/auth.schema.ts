@@ -9,7 +9,7 @@ export const authValidator = z.object({
 
 export const authResponseSchema = z.object({
     token: z.string().describe('Token do cliente'),
-    expiresIn: z.number().describe('Data de expiração do token'),
+    expiresIn: z.string().describe('Data de expiração do token'),
 });
 
 const baseErrorSchema = z.object({

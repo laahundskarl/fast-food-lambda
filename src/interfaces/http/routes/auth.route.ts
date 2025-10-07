@@ -8,9 +8,10 @@ import { authSchema } from '#/interfaces/http/schemas/auth/auth.route-schema';
 export const authRoute = (app: FastifyInstance) => {
     const controller = app.container.get<IAuthController>(TYPES.AuthController);
 
-    app.post('/', authSchema, async (req, reply) => {
+    app.post('/auth', authSchema, async (req, reply) => {
         const body = req.body as AuthDto;
-        await controller.get(body);
-        return reply.status(200).send();
+        const response = await controller.getToken(body);
+        console.log('RESPONSE', response);
+        return reply.status(200).send(response);
     });
 };
