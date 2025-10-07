@@ -7,9 +7,25 @@
     "scripts": {
         "build": "tsc",
         "build:clean": "rimraf dist",
+        "build:package": "./build-package.sh",
         "dev": "tsx watch src/index.ts",
+        "start": "node dist/index.js",
         "lint": "tsc && eslint ./src/**/*.ts",
-        "prisma:generate": "prisma generate"
+        "lint:fix": "eslint ./src/**/*.ts --fix",
+        "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+        "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
+        "prisma:generate": "prisma generate",
+        "prisma:migrate": "prisma migrate dev",
+        "prisma:deploy": "prisma migrate deploy",
+        "prisma:reset": "prisma migrate reset",
+        "terraform:init": "cd terraform && terraform init",
+        "terraform:plan": "cd terraform && terraform plan -var=\"lambda_filename=../lambda-deployment.zip\"",
+        "terraform:apply": "cd terraform && terraform apply -var=\"lambda_filename=../lambda-deployment.zip\"",
+        "terraform:destroy": "cd terraform && terraform destroy -var=\"lambda_filename=../lambda-deployment.zip\"",
+        "deploy:local": "npm run build && npm run build:package",
+        "deploy:aws": "npm run deploy:local && npm run terraform:apply",
+        "test:local": "curl -X POST http://localhost:3000/auth -H \"Content-Type: application/json\" -d '{\"cpf\":\"12345678901\"}'",
+        "clean": "npm run build:clean && rm -f lambda-deployment.zip"
     },
     "repository": {
         "type": "git",

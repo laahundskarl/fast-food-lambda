@@ -1,0 +1,34 @@
+# FastFood Lambda - Terraform Variables Example
+# Copie este arquivo para terraform.tfvars e ajuste os valores conforme necessário
+
+# AWS Configuration
+aws_region = "us-east-1"
+environment = "production"
+
+# Lambda Configuration
+lambda_function_name = "fast-food-auth"
+lambda_handler = "index.handler"
+lambda_runtime = "nodejs18.x"
+lambda_timeout = 30
+lambda_memory_size = 256
+lambda_filename = "../lambda-deployment.zip"
+
+# API Gateway Configuration
+api_gateway_name = "fast-food-lambda-api"
+api_gateway_stage_name = "prod"
+
+# Database Configuration (será detectado automaticamente se RDS existir)
+# Deixe database_host vazio para auto-detecção do RDS do projeto FastFood
+database_host = ""
+database_port = 3306
+database_name = "fastfood"
+database_username = "admin"
+
+# Sensitive - Configure via variáveis de ambiente ou AWS Secrets Manager
+# database_password = "your-secure-password"
+# jwt_secret = "your-jwt-secret-key"
+
+# Exemplo de override manual para desenvolvimento local:
+# database_host = "localhost"
+# database_password = "localpass"
+# jwt_secret = "dev-secret-key"

@@ -1,0 +1,227 @@
+name: Cleanup - Destroy Lambda
+
+on:
+  workflow_dispatch:
+    inputs:
+      cleanup_type:
+        description: 'Type of cleanup to perform'
+        required: true
+        type: choice
+        options:
+          - lambda-only
+          - full-infrastructure
+        default: 'lambda-only'
+      confirmation:
+        description: 'Type DESTROY to confirm deletion'
+        required: true
+        type: string
+      environment:
+        description: 'Environment to cleanup'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  AWS_REGION: us-east-1
+  LAMBDA_FUNCTION_NAME: fast-food-auth
+  TF_VERSION: '1.0'
+
+jobs:
+  validate-confirmation:
+    name: ✅ Validate Cleanup Request
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🔒 Validate confirmation input
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "DESTROY" ]; then
+            echo "❌ Invalid confirmation. You must type 'DESTROY' to proceed."
+            echo "Received: '${{ github.event.inputs.confirmation }}'"
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+          
+      - name: 📋 Cleanup Summary
+        run: |
+          echo "## ⚠️  FastFood Lambda - Cleanup Request" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Cleanup Type:** ${{ github.event.inputs.cleanup_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Confirmation:** ✅ Validated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🚨 **Warning:** This action will permanently delete AWS resources!" >> $GITHUB_STEP_SUMMARY
+
+  cleanup-lambda-only:
+    name: 🗑️ Cleanup Lambda Function Only
+    runs-on: ubuntu-latest
+    needs: validate-confirmation
+    if: github.event.inputs.cleanup_type == 'lambda-only'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: ⚙️ Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: 🔍 Check Lambda function exists
+        id: check-lambda
+        run: |
+          if aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }} 2>/dev/null; then
+            echo "lambda-exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Lambda function found: ${{ env.LAMBDA_FUNCTION_NAME }}"
+          else
+            echo "lambda-exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  Lambda function not found: ${{ env.LAMBDA_FUNCTION_NAME }}"
+          fi
+          
+      - name: 🗑️ Delete Lambda function
+        if: steps.check-lambda.outputs.lambda-exists == 'true'
+        run: |
+          echo "Deleting Lambda function: ${{ env.LAMBDA_FUNCTION_NAME }}"
+          aws lambda delete-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }}
+          echo "✅ Lambda function deleted successfully"
+          
+      - name: 📋 Cleanup Summary
+        run: |
+          echo "## 🗑️ Lambda Cleanup Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Lambda Function:** ${{ steps.check-lambda.outputs.lambda-exists == 'true' && '✅ Deleted' || 'ℹ️  Not Found' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Note:** Other infrastructure (API Gateway, IAM roles) may still exist." >> $GITHUB_STEP_SUMMARY
+          echo "Use 'full-infrastructure' cleanup to remove all resources." >> $GITHUB_STEP_SUMMARY
+
+  terraform-destroy:
+    name: 🚨 Destroy All Lambda Infrastructure
+    runs-on: ubuntu-latest
+    needs: validate-confirmation
+    if: github.event.inputs.cleanup_type == 'full-infrastructure'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: ⚙️ Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: 🔧 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          
+      - name: 🔧 Terraform Init
+        working-directory: terraform
+        run: terraform init
+        
+      - name: 📋 Show resources to be destroyed
+        working-directory: terraform
+        run: |
+          echo "Resources that will be destroyed:"
+          terraform plan -destroy \
+            -var="lambda_filename=../dummy.zip" \
+            -var="environment=${{ github.event.inputs.environment }}" || true
+            
+      - name: 🚨 Terraform Destroy
+        working-directory: terraform
+        run: |
+          echo "Destroying all Lambda infrastructure..."
+          terraform destroy -auto-approve \
+            -var="lambda_filename=../dummy.zip" \
+            -var="environment=${{ github.event.inputs.environment }}"
+          echo "✅ Infrastructure destroyed successfully"
+          
+      - name: 🧹 Manual cleanup (fallback)
+        run: |
+          echo "Performing manual cleanup of any remaining resources..."
+          
+          # Delete Lambda function (fallback)
+          if aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }} 2>/dev/null; then
+            aws lambda delete-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }}
+            echo "✅ Fallback: Lambda function deleted"
+          fi
+          
+          # List any remaining Lambda functions with our naming pattern
+          REMAINING_FUNCTIONS=$(aws lambda list-functions \
+            --query 'Functions[?contains(FunctionName, `fast-food`)].FunctionName' \
+            --output text 2>/dev/null || echo "")
+            
+          if [ -n "$REMAINING_FUNCTIONS" ]; then
+            echo "⚠️  Remaining Lambda functions found:"
+            echo "$REMAINING_FUNCTIONS"
+          else
+            echo "✅ No remaining Lambda functions found"
+          fi
+          
+      - name: 📊 Destruction Summary
+        run: |
+          echo "## 🚨 Full Infrastructure Cleanup Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Cleanup Type:** ${{ github.event.inputs.cleanup_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ All resources destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Resources Removed:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Lambda function (${{ env.LAMBDA_FUNCTION_NAME }})" >> $GITHUB_STEP_SUMMARY
+          echo "- IAM roles and policies" >> $GITHUB_STEP_SUMMARY
+          echo "- API Gateway resources" >> $GITHUB_STEP_SUMMARY
+          echo "- CloudWatch log groups" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💰 **Cost Impact:** AWS Lambda resources cleanup completed" >> $GITHUB_STEP_SUMMARY
+
+  cost-analysis:
+    name: 💰 Post-Cleanup Cost Analysis
+    runs-on: ubuntu-latest
+    needs: [cleanup-lambda-only, terraform-destroy]
+    if: always() && (needs.cleanup-lambda-only.result == 'success' || needs.terraform-destroy.result == 'success')
+    
+    steps:
+      - name: ⚙️ Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: 💰 Estimate cost savings
+        run: |
+          echo "Analyzing remaining AWS resources..."
+          
+          # Count remaining Lambda functions
+          LAMBDA_COUNT=$(aws lambda list-functions --query 'length(Functions)' --output text 2>/dev/null || echo "0")
+          
+          # Count API Gateway REST APIs
+          API_COUNT=$(aws apigateway get-rest-apis --query 'length(items)' --output text 2>/dev/null || echo "0")
+          
+          echo "## 💰 Cost Analysis Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Cleanup Type:** ${{ github.event.inputs.cleanup_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Remaining Resources:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Lambda Functions: $LAMBDA_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- API Gateways: $API_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.cleanup_type }}" = "full-infrastructure" ]; then
+            echo "💸 **Estimated Monthly Savings:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Lambda: ~\$0-5 (pay-per-request)" >> $GITHUB_STEP_SUMMARY
+            echo "- API Gateway: ~\$0-10 (pay-per-request)" >> $GITHUB_STEP_SUMMARY
+            echo "- CloudWatch Logs: ~\$0-1" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Total Estimated Savings: ~\$0-16/month**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "💡 **Note:** Partial cleanup completed. Some resources may still incur costs." >> $GITHUB_STEP_SUMMARY
+            echo "Consider running 'full-infrastructure' cleanup for maximum savings." >> $GITHUB_STEP_SUMMARY
+          fi
