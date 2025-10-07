@@ -2,7 +2,7 @@ name: Infrastructure - Deploy Lambda
 
 on:
   push:
-    branches: [ main ]
+    branches: [ modulo_3 ]
     paths:
       - 'terraform/**'
       - 'src/**'
@@ -33,14 +33,14 @@ jobs:
     name: 📋 Terraform Plan
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'production' }}
-    
+
     outputs:
       tf-plan-exists: ${{ steps.plan.outputs.tf-plan-exists }}
-      
+
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: ⚙️ Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -48,38 +48,38 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-          
+
       - name: 🔧 Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
-          
+
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
-          
+
       - name: 📦 Install dependencies
         run: npm ci
-        
+
       - name: 🔧 Generate Prisma Client
         run: npm run prisma:generate
-        
+
       - name: 🏗️ Build Lambda function
         run: npm run build
-        
+
       - name: 📦 Create deployment package
         run: |
           cd dist
           zip -r ../lambda-deployment.zip .
           cd ..
           zip -r lambda-deployment.zip node_modules/
-          
+
       - name: 🔧 Terraform Init
         working-directory: terraform
         run: terraform init
-        
+
       - name: 📋 Terraform Plan
         id: plan
         working-directory: terraform
@@ -87,13 +87,13 @@ jobs:
           terraform plan -detailed-exitcode -out=tfplan \
             -var="lambda_filename=../lambda-deployment.zip" \
             -var="environment=${{ github.event.inputs.environment || 'production' }}"
-          
+
           if [ $? -eq 2 ]; then
             echo "tf-plan-exists=true" >> $GITHUB_OUTPUT
           else
             echo "tf-plan-exists=false" >> $GITHUB_OUTPUT
           fi
-          
+
       - name: 📁 Upload Terraform plan
         if: steps.plan.outputs.tf-plan-exists == 'true'
         uses: actions/upload-artifact@v4
@@ -101,7 +101,7 @@ jobs:
           name: terraform-plan-${{ github.sha }}
           path: terraform/tfplan
           retention-days: 7
-          
+
       - name: 📁 Upload Lambda package
         uses: actions/upload-artifact@v4
         with:
@@ -115,11 +115,11 @@ jobs:
     needs: terraform-plan
     if: needs.terraform-plan.outputs.tf-plan-exists == 'true' || github.event.inputs.force_deploy == 'true'
     environment: ${{ github.event.inputs.environment || 'production' }}
-    
+
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: ⚙️ Configure AWS credentials
         uses: actions/configure-aws-credentials@v4
         with:
@@ -127,28 +127,28 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-          
+
       - name: 🔧 Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
-          
+
       - name: 📁 Download Lambda package
         uses: actions/download-artifact@v4
         with:
           name: lambda-package-${{ github.sha }}
-          
+
       - name: 📁 Download Terraform plan
         if: needs.terraform-plan.outputs.tf-plan-exists == 'true'
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan-${{ github.sha }}
           path: terraform/
-          
+
       - name: 🔧 Terraform Init
         working-directory: terraform
         run: terraform init
-        
+
       - name: 🚀 Terraform Apply
         working-directory: terraform
         run: |
@@ -159,7 +159,7 @@ jobs:
               -var="lambda_filename=../lambda-deployment.zip" \
               -var="environment=${{ github.event.inputs.environment || 'production' }}"
           fi
-          
+
       - name: 📤 Output deployment info
         working-directory: terraform
         run: |
@@ -177,7 +177,7 @@ jobs:
     needs: terraform-apply
     if: always() && needs.terraform-apply.result == 'success'
     environment: ${{ github.event.inputs.environment || 'production' }}
-    
+
     steps:
       - name: ⚙️ Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -186,19 +186,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-          
+
       - name: 📁 Download Lambda package
         uses: actions/download-artifact@v4
         with:
           name: lambda-package-${{ github.sha }}
-          
+
       - name: 🔄 Update Lambda function code
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
             --zip-file fileb://lambda-deployment.zip \
             --region ${{ env.AWS_REGION }}
-            
+
       - name: ⚙️ Update Lambda environment variables
         run: |
           # Obter RDS endpoint do remote state ou AWS CLI
@@ -206,10 +206,10 @@ jobs:
             --db-instance-identifier fastfood-db \
             --query 'DBInstances[0].Endpoint.Address' \
             --output text 2>/dev/null || echo "")
-            
+
           if [ -n "$RDS_ENDPOINT" ]; then
             DATABASE_URL="mysql://admin:admin123@${RDS_ENDPOINT}:3306/fastfood?allowPublicKeyRetrieval=true"
-            
+
             aws lambda update-function-configuration \
               --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
               --environment Variables="{
@@ -218,7 +218,7 @@ jobs:
                 \"NODE_ENV\":\"${{ github.event.inputs.environment || 'production' }}\"
               }" \
               --region ${{ env.AWS_REGION }}
-              
+
             echo "✅ Lambda environment variables updated with RDS endpoint: $RDS_ENDPOINT"
           else
             echo "⚠️  RDS endpoint not found. Lambda will use default configuration."
@@ -229,7 +229,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [terraform-apply, update-lambda-code]
     if: always() && needs.terraform-apply.result == 'success'
-    
+
     steps:
       - name: ⚙️ Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -238,26 +238,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-          
+
       - name: 🔍 Validate Lambda function
         run: |
           echo "Validating Lambda function deployment..."
-          
+
           # Check if function exists and is active
           FUNCTION_STATUS=$(aws lambda get-function \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
             --query 'Configuration.State' \
             --output text 2>/dev/null || echo "NotFound")
-            
+
           if [ "$FUNCTION_STATUS" = "Active" ]; then
             echo "✅ Lambda function is active and ready"
-            
+
             # Test function with a simple invocation
             aws lambda invoke \
               --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
               --payload '{"httpMethod":"GET","path":"/health"}' \
               response.json 2>/dev/null || true
-              
+
             if [ -f response.json ]; then
               echo "✅ Lambda function test invocation successful"
               cat response.json
@@ -266,7 +266,7 @@ jobs:
             echo "❌ Lambda function status: $FUNCTION_STATUS"
             exit 1
           fi
-          
+
       - name: 📊 Deployment Summary
         run: |
           echo "## ✅ FastFood Lambda - Deployment Complete" >> $GITHUB_STEP_SUMMARY
