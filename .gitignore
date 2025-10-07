@@ -158,3 +158,6 @@ coverage/
 # Lambda response files
 response.json
 !.vscode/extensions.json
+
+# AI Instructions
+.github/copilot-instructions.md
