@@ -2,7 +2,7 @@ name: Infrastructure - Deploy Lambda
 
 on:
   push:
-    branches: [ main ]
+    branches: [ modulo_3 ]
     paths:
       - 'terraform/**'
       - 'src/**'

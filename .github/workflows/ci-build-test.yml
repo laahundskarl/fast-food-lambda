@@ -2,14 +2,14 @@ name: CI - Build and Test
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ modulo_3 ]
     paths:
       - 'src/**'
       - 'package*.json'
       - 'tsconfig.json'
       - '.github/workflows/ci-build-test.yml'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ modulo_3 ]
     paths:
       - 'src/**'
       - 'package*.json'
