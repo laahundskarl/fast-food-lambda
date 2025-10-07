@@ -14,6 +14,13 @@ on:
       - 'src/**'
       - 'package*.json'
       - 'tsconfig.json'
+  workflow_dispatch:
+    inputs:
+      run_full_suite:
+        description: 'Run full test suite including linting'
+        required: false
+        type: boolean
+        default: true
 
 env:
   NODE_VERSION: '22'
@@ -130,3 +137,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** `${{ github.ref_name }}`" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** `${{ github.sha }}`" >> $GITHUB_STEP_SUMMARY
+
